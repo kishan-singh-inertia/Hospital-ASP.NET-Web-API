@@ -1,0 +1,194 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Donation Entry</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial;
+            margin: 40px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        table, th, td {
+            border: 1px solid #999;
+            padding: 8px;
+            text-align: left;
+        }
+
+        select, input {
+            padding: 5px;
+            margin-right: 10px;
+        }
+
+        button {
+            padding: 6px 12px;
+            margin: 10px 0;
+            cursor: pointer;
+            background-color: aqua;
+            color: white;
+            font-size: 16px;
+        }
+
+        #donationTable tfoot td {
+            font-weight: bold;
+            background-color: #f0f0f0;
+        }
+
+        .addDonationBtn {
+            float: right;
+        }
+
+        .saveDonationsBtn {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Create Donation Entry Screen</h2>
+
+    <label>Select District:</label>
+    <select id="district">
+        <option value="">--District Master--</option>
+    </select>
+    <br>
+
+    <label>Select Hospital:</label>
+    <select id="hospital">
+        <option value="">--Hospital Master--</option>
+    </select>
+
+    <br>
+
+    <button id="addDonation" class="addDonationBtn">Add Donation</button>
+
+    <table id="donationTable">
+        <thead>
+            <tr>
+                <th>Donation Date</th>
+                <th>Donate Amount (Rs.)</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+        <tfoot>
+            <tr>
+                <td>TOTAL</td>
+                <td id="totalAmount">0.00</td>
+                <td></td>
+            </tr>
+        </tfoot>
+    </table>
+    <div class="saveDonationsBtn">
+        <button id="saveDonations" >Save</button>
+    </div>
+    <script>
+        let donations = [];
+
+        $(document).ready(function () {
+            // Load districts
+            $.get("/api/donation/districts", function (data) {
+                data.forEach(d => {
+                    $("#district").append(`<option value="${d.districtId}">${d.districtName}</option>`);
+                });
+            });
+
+            // Load hospitals based on district
+            $("#district").change(function () {
+                const districtId = $(this).val();
+                $("#hospital").empty().append('<option value="">--Hospital Master--</option>');
+                if (!districtId) return;
+                $.get(`/api/donation/hospitals/${districtId}`, function (data) {
+                    data.forEach(h => {
+                        $("#hospital").append(`<option value="${h.hospitalId}">${h.hospitalName}</option>`);
+                    });
+                }).fail(() => alert("Error loading hospitals."));
+            });
+
+            // Add donation row
+            $("#addDonation").click(function () {
+                const districtId = $("#district").val();
+                const hospitalId = $("#hospital").val();
+
+                if (!districtId || !hospitalId) {
+                    alert("Please select both district and hospital.");
+                    return;
+                }
+
+                const dateInput = `<input type="date" class="donationDate">`;
+                const amountInput = `<input type="number" class="donationAmount" min="0">`;
+                const delButton = `<button class='del'>Del</button>`;
+
+                const newRow = $(`<tr><td>${dateInput}</td><td>${amountInput}</td><td>${delButton}</td></tr>`);
+                $("#donationTable tbody").append(newRow);
+
+                newRow.find(".del").on("click", function () {
+                    $(this).closest("tr").remove();
+                    updateTotal();
+                });
+
+                newRow.find(".donationAmount").on("input", updateTotal);
+            });
+
+            function updateTotal() {
+                let total = 0;
+                $(".donationAmount").each(function () {
+                    const val = parseFloat($(this).val());
+                    if (!isNaN(val)) total += val;
+                });
+                $("#totalAmount").text(total.toFixed(2));
+            }
+
+            // Save donations
+            $("#saveDonations").click(function () {
+                const districtId = $("#district").val();
+                const hospitalId = $("#hospital").val();
+
+                const rows = $("#donationTable tbody tr");
+                if (rows.length === 0) return alert("No donations to save");
+
+                const payload = [];
+
+                rows.each(function () {
+                    const date = $(this).find(".donationDate").val();
+                    const amount = parseFloat($(this).find(".donationAmount").val());
+
+                    if (!date || isNaN(amount) || amount <= 0) return;
+
+                    payload.push({
+                        districtId,
+                        hospitalId,
+                        donationDate: new Date(date + "T00:00:00Z").toISOString(),
+                        donationAmount: amount
+                    });
+                });
+
+                if (payload.length === 0) return alert("Please fill valid donation entries.");
+
+                $.ajax({
+                    url: "/api/donation/add",
+                    method: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify(payload),
+                    success: res => {
+                        alert(res.message);
+                        donations = [];
+                        $("#donationTable tbody").empty();
+                        updateTotal();
+                    },
+                    error: xhr => {
+                        alert("Error saving donations: " + (xhr.responseJSON?.message || xhr.statusText));
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
